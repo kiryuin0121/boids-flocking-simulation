@@ -8,6 +8,10 @@ import { useControls } from "leva";
 import { randFloat, randInt } from "three/src/math/MathUtils.js";
 import { useFrame } from "@react-three/fiber";
 
+const remap = (value,fromMin,fromMax,toMin,toMax)=>{
+  return toMin + ((toMax - toMin) * (value - fromMin)) / (fromMax - fromMin);
+};
+
 const wander = new Vector3();
 const limits = new Vector3();
 const steering = new Vector3(); //Boidの進行ベクトル (ゆらめきのwanderと領域外に移動防止する用のlimitsの影響を受ける)
@@ -102,7 +106,7 @@ export const Boids = ({ boundaries }) => {
       steering.clampLength(0, MAX_STEERING * delta); //deltaを掛け算する理由：アニメーションをfpsに依存させないため
 
       boid.velocity.add(steering);
-      boid.velocity.clampLength(0, MAX_SPEED * delta);
+      boid.velocity.clampLength(0,remap(boid.scale, MIN_SCALE, MAX_SCALE, MAX_SPEED, MIN_SPEED) * delta);
 
       // APPLY VELOCITY
       boid.position.add(boid.velocity);
