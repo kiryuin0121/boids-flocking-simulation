@@ -1,22 +1,61 @@
 import { useAnimations, useGLTF } from "@react-three/drei";
-
 import { useAtom } from "jotai";
 import { useEffect, useMemo, useRef } from "react";
 import { Vector3 } from "three";
 import { SkeletonUtils } from "three-stdlib";
 import { themeAtom, THEMES } from "./UI";
+import { useControls } from "leva";
+import { randFloat, randInt } from "three/src/math/MathUtils.js";
 
-export const Boids = ({}) => {
+export const Boids = ({boundaries}) => {
   const [theme] = useAtom(themeAtom);
-  return (
-    <>
-      <Boid
-        position={new Vector3(0, 0, 0)}
-        model={THEMES[theme].models[0]}
-        animation={"Fish_Armature|Swimming_Fast"}
-      />
-    </>
+  const { NB_BOIDS, MIN_SCALE, MAX_SCALE, MIN_SPEED, MAX_SPEED, MAX_STEERING } =
+    useControls(
+      "General settings",
+      {
+        NB_BOIDS: { value: 100, min: 1, max: 200 },
+        MIN_SCALE: { value: 0.7, min: 0.1, max: 2, step: 0.1 },
+        MAX_SCALE: { value: 1.3, min: 0.1, max: 2, step: 0.1 },
+        MIN_SPEED: { value: 0.9, min: 0, max: 10, step: 0.1 },
+        MAX_SPEED: { value: 3.6, min: 0, max: 10, step: 0.1 },
+        MAX_STEERING: { value: 0.1, min: 0, max: 1, step: 0.01 },
+      },
+      { collapsed: true }
+    );
+  const {threeD} = useControls(
+     "Boid Rules",
+    {
+      threeD: { value: true },
+      ALIGNEMENT: { value: true },
+      AVOIDANCE: { value: true },
+      COHESION: { value: true },
+    },
+    { collapsed: true }
   );
+   const boids = useMemo(() => {
+    return new Array(NB_BOIDS).fill().map((_, i) => ({
+      model: THEMES[theme].models[randInt(0, THEMES[theme].models.length - 1)],
+      position: new Vector3(
+        randFloat(-boundaries.x / 2, boundaries.x / 2),
+        randFloat(-boundaries.y / 2, boundaries.y / 2),
+        threeD ? randFloat(-boundaries.z / 2, boundaries.z / 2) : 0
+      ),
+      velocity: new Vector3(0, 0, 0),
+      wander: randFloat(0, Math.PI * 2),
+      scale: randFloat(MIN_SCALE, MAX_SCALE),
+    }));
+  }, [NB_BOIDS, boundaries, theme, MIN_SCALE, MAX_SCALE, threeD]);
+
+  return boids.map((boid, index) => (
+    <Boid
+      key={index + boid.model}
+      position={boid.position}
+      model={boid.model}
+      scale={boid.scale}
+      velocity={boid.velocity}
+      animation={"Fish_Armature|Swimming_Fast"}
+    />
+  ));
 };
 
 const Boid = ({ position, model, animation, ...props }) => {
