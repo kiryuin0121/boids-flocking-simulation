@@ -45,6 +45,16 @@ export const Experience = () => {
 
       <Boids boundaries={responsiveBoundaries}/>
 
+       {/* GROUND */}
+      <mesh
+        position-y={-responsiveBoundaries.y / 2}
+        rotation-x={-Math.PI / 2}
+        receiveShadow
+      >
+        <planeGeometry args={[100, 100]} />
+        <meshStandardMaterial color={THEMES[theme].groundColor} />
+      </mesh>
+
       <mesh visible={boundaries.debug}>
         <boxGeometry
           args={[

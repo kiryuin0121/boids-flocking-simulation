@@ -6,39 +6,53 @@ import { SkeletonUtils } from "three-stdlib";
 import { themeAtom, THEMES } from "./UI";
 import { useControls } from "leva";
 import { randFloat, randInt } from "three/src/math/MathUtils.js";
+import { useFrame } from "@react-three/fiber";
 
-export const Boids = ({boundaries}) => {
+const wander = new Vector3();
+const limits = new Vector3();
+const steering = new Vector3(); //Boidの進行ベクトル (ゆらめきのwanderと領域外に移動防止する用のlimitsの影響を受ける)
+
+export const Boids = ({ boundaries }) => {
   const [theme] = useAtom(themeAtom);
   const { NB_BOIDS, MIN_SCALE, MAX_SCALE, MIN_SPEED, MAX_SPEED, MAX_STEERING } =
     useControls(
       "General settings",
       {
-        NB_BOIDS: { value: 100, min: 1, max: 200 },
+        NB_BOIDS: { value: 60, min: 1, max: 200 },
         MIN_SCALE: { value: 0.7, min: 0.1, max: 2, step: 0.1 },
         MAX_SCALE: { value: 1.3, min: 0.1, max: 2, step: 0.1 },
         MIN_SPEED: { value: 0.9, min: 0, max: 10, step: 0.1 },
         MAX_SPEED: { value: 3.6, min: 0, max: 10, step: 0.1 },
         MAX_STEERING: { value: 0.1, min: 0, max: 1, step: 0.01 },
       },
-      { collapsed: true }
+      { collapsed: true },
     );
-  const {threeD} = useControls(
-     "Boid Rules",
+  const { threeD } = useControls(
+    "Boid Rules",
     {
       threeD: { value: true },
       ALIGNEMENT: { value: true },
       AVOIDANCE: { value: true },
       COHESION: { value: true },
     },
-    { collapsed: true }
+    { collapsed: true },
   );
-   const boids = useMemo(() => {
+  const { WANDER_RADIUS, WANDER_STRENGTH, WANDER_CIRCLE } = useControls(
+    "Wander",
+    {
+      WANDER_CIRCLE: false,
+      WANDER_RADIUS: { value: 5, min: 1, max: 10, step: 1 },
+      WANDER_STRENGTH: { value: 2, min: 0, max: 10, step: 1 },
+    },
+    { collapsed: true },
+  );
+  const boids = useMemo(() => {
     return new Array(NB_BOIDS).fill().map((_, i) => ({
       model: THEMES[theme].models[randInt(0, THEMES[theme].models.length - 1)],
       position: new Vector3(
         randFloat(-boundaries.x / 2, boundaries.x / 2),
         randFloat(-boundaries.y / 2, boundaries.y / 2),
-        threeD ? randFloat(-boundaries.z / 2, boundaries.z / 2) : 0
+        threeD ? randFloat(-boundaries.z / 2, boundaries.z / 2) : 0,
       ),
       velocity: new Vector3(0, 0, 0),
       wander: randFloat(0, Math.PI * 2),
@@ -46,6 +60,54 @@ export const Boids = ({boundaries}) => {
     }));
   }, [NB_BOIDS, boundaries, theme, MIN_SCALE, MAX_SCALE, threeD]);
 
+  useFrame((_, delta) => {
+    for (let i = 0; i < boids.length; i++) {
+      const boid = boids[i];
+
+      // WANDER
+      boid.wander += randFloat(-0.05, 0.05); //Boidがフラフラ動く様子を表現するためにランダムな値を加算する。
+      //角度から生体方向のベクトルを生成
+      wander.set(
+        Math.cos(boid.wander) * WANDER_RADIUS,
+        Math.sin(boid.wander) * WANDER_RADIUS,
+        0,
+      ); 
+      // ベクトルの大きさを ゆらめきの強さ(WANDER_STRENGTH)にする。
+      wander.normalize();//単位ベクトルに変換する理由：方向によって力の強さが変わるため。大きさを1にそろえてから好きな強さを掛け算したほうが都合がいい。
+      wander.multiplyScalar(WANDER_STRENGTH);
+
+      // RESET FORCES
+      limits.multiplyScalar(0);
+      steering.multiplyScalar(0);
+
+      // LIMITS
+      if (Math.abs(boid.position.x) + 1 > boundaries.x / 2) {
+        limits.x = -boid.position.x;
+        boid.wander += Math.PI;
+      }
+      if (Math.abs(boid.position.y) + 1 > boundaries.y / 2) {
+        limits.y = -boid.position.y;
+        boid.wander += Math.PI;
+      }
+      if (Math.abs(boid.position.z) + 1 > boundaries.z / 2) {
+        limits.z = -boid.position.z;
+        boid.wander += Math.PI;
+      }
+      limits.normalize();
+      limits.multiplyScalar(50);
+
+      // APPLY FORCES
+      steering.add(wander);
+      steering.add(limits);
+      steering.clampLength(0, MAX_STEERING * delta); //deltaを掛け算する理由：アニメーションをfpsに依存させないため
+
+      boid.velocity.add(steering);
+      boid.velocity.clampLength(0, MAX_SPEED * delta);
+
+      // APPLY VELOCITY
+      boid.position.add(boid.velocity);
+    }
+  });
   return boids.map((boid, index) => (
     <Boid
       key={index + boid.model}
@@ -54,11 +116,22 @@ export const Boids = ({boundaries}) => {
       scale={boid.scale}
       velocity={boid.velocity}
       animation={"Fish_Armature|Swimming_Fast"}
+      wanderCircle={WANDER_CIRCLE}
+      wanderRadius={WANDER_RADIUS / boid.scale}
     />
   ));
 };
 
-const Boid = ({ position, model, animation, ...props }) => {
+const Boid = ({
+  position,
+  model,
+  scale,
+  velocity,
+  animation,
+  wanderCircle,
+  wanderRadius,
+  ...props
+}) => {
   const { scene, animations } = useGLTF(`/models/${model}.glb`);
   const clone = useMemo(() => SkeletonUtils.clone(scene), [scene]);
   const group = useRef();
@@ -78,9 +151,22 @@ const Boid = ({ position, model, animation, ...props }) => {
     };
   }, [animation]);
 
+  useFrame(() => {
+    // clone:純粋に値だけほしいとき(参照は断ち切りたい)
+    // copy:オブジェクトの中身だけ書き換えたいとき(参照は保ちたい)
+    const target = group.current.clone(false);
+    target.lookAt(group.current.position.clone().add(velocity));
+    group.current.quaternion.slerp(target.quaternion, 0.1);
+    group.current.position.copy(position);
+  });
+
   return (
     <group {...props} ref={group} position={position}>
       <primitive object={clone} rotation-y={Math.PI / 2} />
+      <mesh visible={wanderCircle}>
+        <sphereGeometry args={[wanderRadius, 32]} />
+        <meshBasicMaterial color={"red"} wireframe />
+      </mesh>
     </group>
   );
 };
