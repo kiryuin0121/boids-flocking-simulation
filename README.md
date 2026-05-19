@@ -7,3 +7,4 @@
 [Live demo](https://r3f-boids-final.vercel.app/)
 
 [Final Code](https://github.com/wass08/r3f-boids-final/)
+# boids-flocking-simulation
