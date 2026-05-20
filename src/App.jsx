@@ -13,6 +13,7 @@ function App() {
       <Loader />
       <Canvas shadows camera={{ position: [0, 0, 5], fov: 50 }}>
         <color attach="background" args={[THEMES[theme].skyColor]} />
+         <fog attach="fog" args={[THEMES[theme].skyColor, 12, 20]} />
         <Suspense fallback={null}>
           <Experience />
         </Suspense>
