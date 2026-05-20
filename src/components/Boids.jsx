@@ -8,13 +8,14 @@ import { useControls } from "leva";
 import { randFloat, randInt } from "three/src/math/MathUtils.js";
 import { useFrame } from "@react-three/fiber";
 
-const remap = (value,fromMin,fromMax,toMin,toMax)=>{
+const remap = (value, fromMin, fromMax, toMin, toMax) => {
   return toMin + ((toMax - toMin) * (value - fromMin)) / (fromMax - fromMin);
 };
 
-const wander = new Vector3();
-const limits = new Vector3();
-const steering = new Vector3(); //Boidの進行ベクトル (ゆらめきのwanderと領域外に移動防止する用のlimitsの影響を受ける)
+const wander = new Vector3(); //ゆらめきを表現するための角度
+const limits = new Vector3(); //移動可能な空間の境界
+const alignment = new Vector3(); //近距離にいる周囲の個体の平均的な進行方向
+const steering = new Vector3(); //Boidの進行ベクトル(wander,limits)
 
 export const Boids = ({ boundaries }) => {
   const [theme] = useAtom(themeAtom);
@@ -31,7 +32,7 @@ export const Boids = ({ boundaries }) => {
       },
       { collapsed: true },
     );
-  const { threeD } = useControls(
+  const { threeD, ALIGNEMENT } = useControls(
     "Boid Rules",
     {
       threeD: { value: true },
@@ -47,6 +48,15 @@ export const Boids = ({ boundaries }) => {
       WANDER_CIRCLE: false,
       WANDER_RADIUS: { value: 5, min: 1, max: 10, step: 1 },
       WANDER_STRENGTH: { value: 2, min: 0, max: 10, step: 1 },
+    },
+    { collapsed: true },
+  );
+  const { ALIGN_RADIUS, ALIGN_STRENGTH, ALIGN_CIRCLE } = useControls(
+    "Alignment",
+    {
+      ALIGN_CIRCLE: false,
+      ALIGN_RADIUS: { value: 1.2, min: 0, max: 10, step: 0.1 },
+      ALIGN_STRENGTH: { value: 4, min: 0, max: 10, step: 1 },
     },
     { collapsed: true },
   );
@@ -67,7 +77,6 @@ export const Boids = ({ boundaries }) => {
   useFrame((_, delta) => {
     for (let i = 0; i < boids.length; i++) {
       const boid = boids[i];
-
       // WANDER
       boid.wander += randFloat(-0.05, 0.05); //Boidがフラフラ動く様子を表現するためにランダムな値を加算する。
       //角度から生体方向のベクトルを生成
@@ -75,14 +84,15 @@ export const Boids = ({ boundaries }) => {
         Math.cos(boid.wander) * WANDER_RADIUS,
         Math.sin(boid.wander) * WANDER_RADIUS,
         0,
-      ); 
+      );
       // ベクトルの大きさを ゆらめきの強さ(WANDER_STRENGTH)にする。
-      wander.normalize();//単位ベクトルに変換する理由：方向によって力の強さが変わるため。大きさを1にそろえてから好きな強さを掛け算したほうが都合がいい。
+      wander.normalize(); //単位ベクトルに変換する理由：方向によって力の強さが変わるため。大きさを1にそろえてから好きな強さを掛け算したほうが都合がいい。
       wander.multiplyScalar(WANDER_STRENGTH);
 
       // RESET FORCES
       limits.multiplyScalar(0);
       steering.multiplyScalar(0);
+      alignment.multiplyScalar(0);
 
       // LIMITS
       if (Math.abs(boid.position.x) + 1 > boundaries.x / 2) {
@@ -100,13 +110,45 @@ export const Boids = ({ boundaries }) => {
       limits.normalize();
       limits.multiplyScalar(50);
 
+      // BOID ALGORITHM
+      for (let b = 0; b < boids.length; b++) {
+        if (b === i) continue;
+
+        // 他のBoidとの距離を取得
+        const other = boids[b];
+        let d = boid.position.distanceTo(other.position);
+
+        // ALIGNEMENT：近くにいる個体と“同じ向き”に進もうとする。
+        /* 
+          1. 近くのBoidを探す
+          2. そのBoidたちの進行方向を集める
+          3. 平均方向を作る
+          4. その方向へ少しだけ舵を切る
+        */
+        if (d > 0 && d < ALIGN_RADIUS) {
+          const copy = other.velocity.clone(); //cloneする理由：normalize() や divideScalar() は元データを書き換えてしまうため
+          // 近所の個体のベクトルの矢印を次々と足し算していくことで、大まかな進行方向がわかる。このとき距離に応じて大きさを調整するようにする。
+          copy.normalize();
+          copy.divideScalar(d);
+          alignment.add(copy);
+        }
+      }
+
       // APPLY FORCES
-      steering.add(wander);
       steering.add(limits);
+      steering.add(wander);
+      if (ALIGNEMENT) {
+        alignment.normalize();
+        alignment.multiplyScalar(ALIGN_STRENGTH);
+        steering.add(alignment);
+      }
       steering.clampLength(0, MAX_STEERING * delta); //deltaを掛け算する理由：アニメーションをfpsに依存させないため
 
       boid.velocity.add(steering);
-      boid.velocity.clampLength(0,remap(boid.scale, MIN_SCALE, MAX_SCALE, MAX_SPEED, MIN_SPEED) * delta);
+      boid.velocity.clampLength(
+        0,
+        remap(boid.scale, MIN_SCALE, MAX_SCALE, MAX_SPEED, MIN_SPEED) * delta,
+      );
 
       // APPLY VELOCITY
       boid.position.add(boid.velocity);
@@ -122,6 +164,8 @@ export const Boids = ({ boundaries }) => {
       animation={"Fish_Armature|Swimming_Fast"}
       wanderCircle={WANDER_CIRCLE}
       wanderRadius={WANDER_RADIUS / boid.scale}
+      alignCircle={ALIGN_CIRCLE}
+      alignRadius={ALIGN_RADIUS / boid.scale}
     />
   ));
 };
@@ -134,6 +178,8 @@ const Boid = ({
   animation,
   wanderCircle,
   wanderRadius,
+  alignCircle,
+  alignRadius,
   ...props
 }) => {
   const { scene, animations } = useGLTF(`/models/${model}.glb`);
@@ -170,6 +216,10 @@ const Boid = ({
       <mesh visible={wanderCircle}>
         <sphereGeometry args={[wanderRadius, 32]} />
         <meshBasicMaterial color={"red"} wireframe />
+      </mesh>
+      <mesh visible={alignCircle}>
+        <sphereGeometry args={[alignRadius, 32]} />
+        <meshBasicMaterial color={"green"} wireframe />
       </mesh>
     </group>
   );
