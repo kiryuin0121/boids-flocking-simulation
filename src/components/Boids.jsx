@@ -15,6 +15,7 @@ const remap = (value, fromMin, fromMax, toMin, toMax) => {
 const wander = new Vector3(); //ゆらめきを表現するための角度
 const limits = new Vector3(); //移動可能な空間の境界
 const alignment = new Vector3(); //近距離にいる周囲の個体の平均的な進行方向
+const avoidance = new Vector3();
 const steering = new Vector3(); //Boidの進行ベクトル(wander,limits)
 
 export const Boids = ({ boundaries }) => {
@@ -32,7 +33,7 @@ export const Boids = ({ boundaries }) => {
       },
       { collapsed: true },
     );
-  const { threeD, ALIGNEMENT } = useControls(
+  const { threeD, ALIGNEMENT,AVOIDANCE } = useControls(
     "Boid Rules",
     {
       threeD: { value: true },
@@ -60,6 +61,16 @@ export const Boids = ({ boundaries }) => {
     },
     { collapsed: true },
   );
+  const { AVOID_RADIUS, AVOID_STRENGTH, AVOID_CIRCLE } = useControls(
+    "Avoidance",
+    {
+      AVOID_CIRCLE: false,
+      AVOID_RADIUS: { value: 0.8, min: 0, max: 2 },
+      AVOID_STRENGTH: { value: 2, min: 0, max: 10, step: 1 },
+    },
+    { collapsed: true }
+  );
+
   const boids = useMemo(() => {
     return new Array(NB_BOIDS).fill().map((_, i) => ({
       model: THEMES[theme].models[randInt(0, THEMES[theme].models.length - 1)],
@@ -93,6 +104,7 @@ export const Boids = ({ boundaries }) => {
       limits.multiplyScalar(0);
       steering.multiplyScalar(0);
       alignment.multiplyScalar(0);
+      avoidance.multiplyScalar(0);
 
       // LIMITS
       if (Math.abs(boid.position.x) + 1 > boundaries.x / 2) {
@@ -113,24 +125,34 @@ export const Boids = ({ boundaries }) => {
       // BOID ALGORITHM
       for (let b = 0; b < boids.length; b++) {
         if (b === i) continue;
-
-        // 他のBoidとの距離を取得
-        const other = boids[b];
-        let d = boid.position.distanceTo(other.position);
-
         // ALIGNEMENT：近くにいる個体と“同じ向き”に進もうとする。
         /* 
-          1. 近くのBoidを探す
-          2. そのBoidたちの進行方向を集める
-          3. 平均方向を作る
-          4. その方向へ少しだけ舵を切る
+          1. 近くの個体を探す
+          2. そのBoidたちの進行方向を集めることで最終的な進行方向を作る(距離に応じて大きさを調整)
+          3. その方向へ少しだけ舵を切る
         */
+       // 他のBoidとの距離を取得
+        const other = boids[b];
+        let d = boid.position.distanceTo(other.position);
         if (d > 0 && d < ALIGN_RADIUS) {
           const copy = other.velocity.clone(); //cloneする理由：normalize() や divideScalar() は元データを書き換えてしまうため
-          // 近所の個体のベクトルの矢印を次々と足し算していくことで、大まかな進行方向がわかる。このとき距離に応じて大きさを調整するようにする。
+          // 近くの個体のベクトルの矢印を次々と足し算していくことで、大まかな進行方向がわかる。このとき距離に応じて大きさを調整するようにする。
           copy.normalize();
           copy.divideScalar(d);
           alignment.add(copy);
+        }
+
+        // AVOIDANCE
+        /* 
+          1. 近すぎる個体を探す
+          2. 相手から反発する方向を集めることで最終的な反発方向を作る(距離に応じて大きさを調整)
+          3. 逃げる方向へ舵を切る
+        */
+         if (d > 0 && d < AVOID_RADIUS) {
+          const diff = boid.position.clone().sub(other.position);
+          diff.normalize();
+          diff.divideScalar(d);
+          avoidance.add(diff);
         }
       }
 
@@ -141,6 +163,11 @@ export const Boids = ({ boundaries }) => {
         alignment.normalize();
         alignment.multiplyScalar(ALIGN_STRENGTH);
         steering.add(alignment);
+      }
+       if (AVOIDANCE) {
+        avoidance.normalize();
+        avoidance.multiplyScalar(AVOID_STRENGTH);
+        steering.add(avoidance);
       }
       steering.clampLength(0, MAX_STEERING * delta); //deltaを掛け算する理由：アニメーションをfpsに依存させないため
 
@@ -166,6 +193,8 @@ export const Boids = ({ boundaries }) => {
       wanderRadius={WANDER_RADIUS / boid.scale}
       alignCircle={ALIGN_CIRCLE}
       alignRadius={ALIGN_RADIUS / boid.scale}
+      avoidCircle={AVOID_CIRCLE}
+      avoidRadius={AVOID_RADIUS / boid.scale}
     />
   ));
 };
@@ -180,6 +209,8 @@ const Boid = ({
   wanderRadius,
   alignCircle,
   alignRadius,
+  avoidCircle,
+  avoidRadius,
   ...props
 }) => {
   const { scene, animations } = useGLTF(`/models/${model}.glb`);
@@ -220,6 +251,10 @@ const Boid = ({
       <mesh visible={alignCircle}>
         <sphereGeometry args={[alignRadius, 32]} />
         <meshBasicMaterial color={"green"} wireframe />
+      </mesh>
+         <mesh visible={avoidCircle}>
+        <sphereGeometry args={[avoidRadius, 32]} />
+        <meshBasicMaterial color={"blue"} wireframe />
       </mesh>
     </group>
   );
