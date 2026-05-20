@@ -13,11 +13,11 @@ const remap = (value, fromMin, fromMax, toMin, toMax) => {
 };
 
 const wander = new Vector3(); //ゆらめきを表現するための角度
+const horizontalWander = new Vector3();
 const limits = new Vector3(); //移動可能な空間の境界
 const alignment = new Vector3(); //近距離にいる周囲の個体の平均的な進行方向
 const avoidance = new Vector3(); //衝突しそうな周囲の個体の平均的な反発方向
 const cohesion = new Vector3(); // 近距離にいる周囲の個体の平均的な位置
-
 const steering = new Vector3(); //Boidの進行ベクトル(wander,limits,alignement,avoidance,cohesionの影響を受ける)
 
 export const Boids = ({ boundaries }) => {
@@ -35,7 +35,7 @@ export const Boids = ({ boundaries }) => {
       },
       { collapsed: true },
     );
-  const { threeD, ALIGNEMENT, AVOIDANCE ,COHESION} = useControls(
+  const { threeD: THREE_D, ALIGNEMENT, AVOIDANCE ,COHESION} = useControls(
     "Boid Rules",
     {
       threeD: { value: true },
@@ -72,7 +72,6 @@ export const Boids = ({ boundaries }) => {
     },
     { collapsed: true },
   );
-
   const { COHESION_RADIUS, COHESION_STRENGTH, COHESION_CIRCLE } = useControls(
     "Cohesion",
     {
@@ -88,20 +87,21 @@ export const Boids = ({ boundaries }) => {
       position: new Vector3(
         randFloat(-boundaries.x / 2, boundaries.x / 2),
         randFloat(-boundaries.y / 2, boundaries.y / 2),
-        threeD ? randFloat(-boundaries.z / 2, boundaries.z / 2) : 0,
+        THREE_D ? randFloat(-boundaries.z / 2, boundaries.z / 2) : 0,
       ),
       velocity: new Vector3(0, 0, 0),
       wander: randFloat(0, Math.PI * 2),
       scale: randFloat(MIN_SCALE, MAX_SCALE),
     }));
-  }, [NB_BOIDS, boundaries, theme, MIN_SCALE, MAX_SCALE, threeD]);
+  }, [NB_BOIDS, boundaries, theme, MIN_SCALE, MAX_SCALE, THREE_D]);
 
   useFrame((_, delta) => {
     for (let i = 0; i < boids.length; i++) {
       const boid = boids[i];
       // WANDER
       boid.wander += randFloat(-0.05, 0.05); //Boidがフラフラ動く様子を表現するためにランダムな値を加算する。
-      //角度から生体方向のベクトルを生成
+
+      // xy平面のゆらめき(z軸回転？)
       wander.set(
         Math.cos(boid.wander) * WANDER_RADIUS,
         Math.sin(boid.wander) * WANDER_RADIUS,
@@ -110,6 +110,16 @@ export const Boids = ({ boundaries }) => {
       // ベクトルの大きさを ゆらめきの強さ(WANDER_STRENGTH)にする。
       wander.normalize(); //単位ベクトルに変換する理由：方向によって力の強さが変わるため。大きさを1にそろえてから好きな強さを掛け算したほうが都合がいい。
       wander.multiplyScalar(WANDER_STRENGTH);
+
+      // zx平面の揺らめき(y軸回転？)
+      horizontalWander.set(
+        Math.cos(boid.wander) * WANDER_RADIUS,
+        0,
+        Math.sin(boid.wander) * WANDER_RADIUS
+      );
+      horizontalWander.normalize();
+      horizontalWander.multiplyScalar(WANDER_STRENGTH);
+      // 
 
       // RESET FORCES
       limits.multiplyScalar(0);
@@ -184,6 +194,9 @@ export const Boids = ({ boundaries }) => {
       // APPLY FORCES
       steering.add(limits);
       steering.add(wander);
+      if(THREE_D){
+        steering.add(horizontalWander);
+      }
       if (ALIGNEMENT) {
         alignment.normalize();
         alignment.multiplyScalar(ALIGN_STRENGTH);
