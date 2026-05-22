@@ -1,7 +1,7 @@
 import { useFont, useGLTF } from "@react-three/drei";
 import { atom, useAtom } from "jotai";
 
-export const themeAtom = atom("underwater");
+export const themeAtom = atom("space");
 
 export const THEMES = {
   underwater: {
@@ -24,8 +24,8 @@ export const THEMES = {
   },
   space: {
     key: "space",
-    skyColor: "#000000",
-    sunColor: "#e1ae4e",
+    skyColor: "#00001a",
+    sunColor: "#330d80",
     groundColor: "#333333",
     title: "Space",
     subtitle: "World",
@@ -45,16 +45,16 @@ export const UI = () => {
   return (
     <>
       <main className=" pointer-events-none select-none z-10 fixed  inset-0  flex justify-center items-center flex-col">
-        <a
+        {/* <a
           className="pointer-events-auto absolute top-10 left-10"
           href="https://lessons.wawasensei.dev/courses/react-three-fiber"
         >
           <img className="w-20" src="/images/wawasensei-white.png" />
-        </a>
+        </a> */}
         <div className="absolute inset-0 -z-10 bg-[radial-gradient(rgba(0,0,0,0.0)_70%,rgba(0,0,0,1)_170%)]" />
         <div className="absolute z-10 pointer-events-auto flex flex-col items-center justify-center bottom-0 w-screen p-10 gap-2">
           <p className=" text-black/80">Boids Flocking Simulation</p>
-          <div className="flex gap-2 items-center justify-center">
+          {/* <div className="flex gap-2 items-center justify-center">
             {Object.values(THEMES).map((t) => (
               <button
                 key={t.key}
@@ -69,7 +69,7 @@ export const UI = () => {
                 {t.title}
               </button>
             ))}
-          </div>
+          </div> */}
         </div>
       </main>
     </>
